@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xboard 订阅全协议解锁</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow: hidden; color: #ffffff; }
+        #mouse-glow { position: fixed; left: 0; top: 0; width: 600px; height: 600px; border-radius: 50%; background: radial-gradient(circle, rgba(74, 144, 226, 0.2) 0%, rgba(74, 144, 226, 0) 60%); transform: translate(-50%, -50%); pointer-events: none; z-index: -2; }
+        #particle-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        .gradient-bg { background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #000000); background-size: 400% 400%; animation: gradient-animation 20s ease infinite; }
+        @keyframes gradient-animation { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @keyframes fade-in-up { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-up { opacity: 0; animation: fade-in-up 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+        .delay-100 { animation-delay: 0.1s; } .delay-200 { animation-delay: 0.2s; } .delay-300 { animation-delay: 0.3s; } .delay-400 { animation-delay: 0.4s; } .delay-500 { animation-delay: 0.5s; }
+        .content-card { background: rgba(0, 0, 0, 0.25); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 2rem; position: relative; overflow: hidden; animation: pulse-border 4s ease-in-out infinite; }
+        @keyframes pulse-border { 0%, 100% { box-shadow: 0 0 25px rgba(74, 144, 226, 0.3), 0 10px 40px rgba(0, 0, 0, 0.3); } 50% { box-shadow: 0 0 50px rgba(74, 144, 226, 0.6), 0 10px 40px rgba(0, 0, 0, 0.3); } }
+        .input-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; text-align: left; color: rgba(255,255,255,0.8); }
+        input[type="text"] { width: 100%; padding: 12px 16px; background-color: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #ffffff; font-size: 16px; box-sizing: border-box; transition: all 0.3s; }
+        input[type="text"]:focus { outline: none; border-color: #66a6ff; box-shadow: 0 0 15px rgba(102, 166, 255, 0.5); }
+        #new-sub-url { background-color: rgba(0,0,0,0.4); cursor: pointer; }
+        #generate-btn {
+            width: 100%; padding: 12px; background-image: linear-gradient(to right, #66a6ff, #89f7fe); border: none;
+            border-radius: 8px; color: #0f0c29; font-size: 18px; font-weight: 700; cursor: pointer;
+            transition: all 0.3s ease-in-out;
+        }
+        #generate-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 166, 255, 0.4); }
+        #result-container { margin-top: 30px; display: none; }
+        p.description { line-height: 1.7; color: rgba(255, 255, 255, 0.85); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen gradient-bg text-white">
+
+    <div id="mouse-glow"></div>
+    <div id="particle-canvas"></div>
+
+    <div class="text-center p-8 md:p-12 lg:p-16 content-card max-w-2xl w-full mx-4 z-10">
+        
+        <h1 class="text-3xl md:text-4xl font-bold mb-4 text-white animate-fade-in-up delay-100">
+            Xboard 订阅全协议解锁
+        </h1>
+        
+        <p class="mb-8 text-base md:text-lg description animate-fade-in-up delay-200">
+            一键解锁 Xboard 订阅中的隐藏节点。<br>
+            由于面板策略，您的订阅可能缺失 <strong>TUIC、anyTLS</strong> 等高级协议。本工具能获取<strong>完整节点列表</strong>，并转换为 <strong>V2rayN、NekoBox</strong> 等客户端的兼容格式。
+        </p>
+
+        <div class="input-group animate-fade-in-up delay-300">
+            <label for="original-sub">输入您的 Xboard 订阅链接:</label>
+            <input type="text" id="original-sub" placeholder="粘贴您的原始订阅链接...">
+        </div>
+        
+        <button id="generate-btn" class="animate-fade-in-up delay-400">
+            生成兼容订阅
+        </button>
+        
+        <div id="result-container" class="animate-fade-in-up delay-500">
+            <label for="new-sub-url">您的新订阅链接 (点击即可复制):</label>
+            <input type="text" id="new-sub-url" readonly>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const CONFIG = { particleCount: 15000 };
+        // --- 订阅转换器核心逻辑 ---
+        const originalSubInput = document.getElementById('original-sub');
+        const generateBtn = document.getElementById('generate-btn');
+        const resultContainer = document.getElementById('result-container');
+        const newSubUrlInput = document.getElementById('new-sub-url');
+
+        generateBtn.addEventListener('click', () => {
+            const originalUrl = originalSubInput.value.trim();
+            if (!originalUrl) {
+                alert('请输入原始订阅链接！');
+                return;
+            }
+            const base64OriginalUrl = btoa(originalUrl);
+            const { protocol, hostname, port: portNum } = window.location;
+            const port = portNum ? ':' + portNum : '';
+            const newUrl = `${protocol}//${hostname}${port}/sub.php?url=${base64OriginalUrl}`;
+            newSubUrlInput.value = newUrl;
+            resultContainer.style.display = 'block';
+        });
+
+        newSubUrlInput.addEventListener('click', () => {
+            if (!newSubUrlInput.value) return;
+            navigator.clipboard.writeText(newSubUrlInput.value).then(() => {
+                alert('新订阅链接已复制到剪贴板！');
+            }).catch(err => {
+                alert('复制失败，请手动复制。');
+            });
+        });
+
+        // --- Three.js 粒子背景与辉光效果 ---
+        let scene, camera, renderer, mouseX = 0, mouseY = 0, stars;
+        function initParticles() {
+            try {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                camera.position.z = 5;
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                document.getElementById('particle-canvas').appendChild(renderer.domElement);
+                const starCount = CONFIG.particleCount;
+                const positions = new Float32Array(starCount * 3);
+                const geometry = new THREE.BufferGeometry();
+                for (let i = 0; i < starCount; i++) {
+                    positions[i * 3]     = (Math.random() - 0.5) * 3000;
+                    positions[i * 3 + 1] = (Math.random() - 0.5) * 3000;
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 3000;
+                }
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const material = new THREE.PointsMaterial({ size: 2.0, color: 0xffffff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+                stars = new THREE.Points(geometry, material);
+                scene.add(stars);
+                window.addEventListener('resize', onWindowResize, false);
+                document.addEventListener('mousemove', onDocumentMouseMove, false);
+                animateParticles();
+            } catch (e) { console.error("粒子效果初始化失败:", e); }
+        }
+        const mouseGlow = document.getElementById('mouse-glow');
+        function onDocumentMouseMove(event) {
+            mouseX = event.clientX - window.innerWidth / 2;
+            mouseY = event.clientY - window.innerHeight / 2;
+            if (mouseGlow) { mouseGlow.style.left = `${event.clientX}px`; mouseGlow.style.top = `${event.clientY}px`; }
+        }
+        function animateParticles() {
+            requestAnimationFrame(animateParticles);
+            if (!stars) return;
+            const positions = stars.geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i + 2] += 2;
+                if (positions[i + 2] > 1000) positions[i + 2] = -2000;
+            }
+            stars.geometry.attributes.position.needsUpdate = true;
+            stars.rotation.y = mouseX * 0.00005;
+            stars.rotation.x = mouseY * 0.00005;
+            renderer.render(scene, camera);
+        }
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        initParticles();
+    });
+    </script>
+</body>
+</html>
